@@ -17,21 +17,48 @@ export default function LoginScreen() {
     try {
       console.log("Conectando con el backend real...");
       
-      // 🚀 PETICIÓN AL BACKEND DE VERCEL
-      // Prueba con /api/login o /api/auth/login según tu servidor
       const response = await axios.post('https://vetapp-web-completo.vercel.app/api/auth/login', {
         email: email,
         password: password
       });
 
-      // El token real suele venir en response.data.token
       if (response.data && response.data.token) {
+        // 1. Guardamos el Token
         (global as any).userToken = response.data.token; 
-        console.log("Login exitoso, token real guardado");
-        router.replace('/(tabs)/explore'); 
+        
+        // 2. CAPTURA PROFUNDA: Buscamos el rol en todos los niveles posibles
+        const userRole = response.data.rol || 
+                         response.data.role || 
+                         (response.data.usuario && response.data.usuario.rol) ||
+                         (response.data.user && response.data.user.role) ||
+                         (response.data.data && response.data.data.rol);
+
+        (global as any).userRole = userRole; 
+
+        // LOG CRUCIAL: Esto te dirá exactamente qué está llegando
+        console.log("--- DATOS RECIBIDOS ---");
+        console.log(JSON.stringify(response.data)); 
+        console.log("ROL ASIGNADO:", userRole);
+
+        // 3. REDIRECCIÓN BASADA EN VALOR REAL
+        if (userRole && String(userRole).toLowerCase() === 'cliente') {
+          console.log("✅ Acceso CLIENTE detectado.");
+          router.replace('/(tabs)/citas'); 
+        } 
+        else if (userRole && (String(userRole).toLowerCase() === 'administrador' || String(userRole).toLowerCase() === 'veterinario')) {
+          console.log("✅ Acceso STAFF detectado.");
+          router.replace('/(tabs)/explore'); 
+        }
+        else {
+          console.log("⚠️ No se pudo determinar el rol:", userRole);
+          Alert.alert(
+            "Error de Perfil", 
+            `El servidor no envió un rol válido. Valor recibido: ${userRole}`
+          );
+        }
       }
     } catch (error: any) {
-      console.log("Fallo en login:", error.response?.status);
+      console.log("❌ Fallo en login:", error.response?.status, error.message);
       Alert.alert("Acceso denegado", "Usuario o clave incorrectos");
     }
   };
@@ -42,7 +69,7 @@ export default function LoginScreen() {
         <Text style={styles.title}>VetApp 🐾</Text>
         <TextInput 
           style={styles.input} 
-          placeholder="admin@ejemplo.com"
+          placeholder="Correo electrónico"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
@@ -57,6 +84,15 @@ export default function LoginScreen() {
         <TouchableOpacity style={styles.button} onPress={handleLogin}>
           <Text style={styles.buttonText}>Ingresar</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.registerContainer} 
+          onPress={() => router.push('/register')}
+        >
+          <Text style={styles.registerText}>
+            ¿No tienes cuenta? <Text style={styles.registerLink}>Regístrate</Text>
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -69,4 +105,7 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#f3f4f6', borderRadius: 10, padding: 15, marginBottom: 15, fontSize: 16 },
   button: { backgroundColor: '#4f46e5', borderRadius: 10, padding: 18, alignItems: 'center', marginTop: 10 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  registerContainer: { marginTop: 20, alignItems: 'center' },
+  registerText: { fontSize: 14, color: '#6b7280' },
+  registerLink: { color: '#4f46e5', fontWeight: 'bold' },
 });

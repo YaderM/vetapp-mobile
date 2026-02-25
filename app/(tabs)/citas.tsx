@@ -8,30 +8,34 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function CitasScreen() {
   const router = useRouter();
-  const [nombreMascota, setNombreMascota] = useState('');
-  const [horaSeleccionada, setHoraSeleccionada] = useState('');
+  const [nombreMascota, setNombreMascota] = useState(''); 
+  const [horaSeleccionada, setHoraSeleccionada] = useState(null);
   const [motivo, setMotivo] = useState('');
   const [loading, setLoading] = useState(false);
   const [historial, setHistorial] = useState([]);
   const [mostrarForm, setMostrarForm] = useState(false);
-  
-  // Base original de fecha
   const [fechaCita, setFechaCita] = useState(new Date().toISOString().split('T')[0]); 
 
-  const slots = ['08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM'];
+  const slots = [
+    { label: '08:00 AM', value: '08:00:00' }, { label: '09:00 AM', value: '09:00:00' },
+    { label: '10:00 AM', value: '10:00:00' }, { label: '11:00 AM', value: '11:00:00' },
+    { label: '12:00 PM', value: '12:00:00' }, { label: '01:00 PM', value: '13:00:00' },
+    { label: '02:00 PM', value: '14:00:00' }, { label: '03:00 PM', value: '15:00:00' },
+    { label: '04:00 PM', value: '16:00:00' }, { label: '05:00 PM', value: '17:00:00' },
+    { label: '06:00 PM', value: '18:00:00' }, { label: '07:00 PM', value: '19:00:00' },
+  ];
 
-  useEffect(() => {
-    if ((global as any).userToken) { fetchHistorial(); }
-  }, []);
+  useEffect(() => { fetchHistorial(); }, []);
 
   const fetchHistorial = async () => {
+    const token = (global as any).userToken;
+    if (!token) return;
     try {
-      const token = (global as any).userToken;
       const response = await axios.get('https://vetapp-web-completo.vercel.app/api/citas/mis-citas', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setHistorial(response.data);
-    } catch (e) { console.log("Error cargando historial"); }
+    } catch (e) { setHistorial([]); }
   };
 
   const handleLogout = () => {
@@ -41,28 +45,45 @@ export default function CitasScreen() {
 
   const handleAgendar = async () => {
     if (!nombreMascota || !horaSeleccionada || !motivo || !fechaCita) {
-      Alert.alert("Campos incompletos", "Por favor completa todos los datos.");
+      Alert.alert("Error", "Por favor completa todos los campos.");
       return;
     }
+
     setLoading(true);
     try {
+      // Usamos el ID del paciente que acabas de crear. 
+      // Según tu web, si Cheto es el primer paciente nuevo, prueba con ID 1 o 2.
+      const userId = (global as any).userData?.id || 1; 
       const token = (global as any).userToken;
-      await axios.post('https://vetapp-web-completo.vercel.app/api/citas', {
-        mascota: nombreMascota, hora: horaSeleccionada, motivo: motivo, fecha: fechaCita 
-      }, { headers: { Authorization: `Bearer ${token}` } });
-      Alert.alert("¡Éxito!", "Cita agendada correctamente.");
+
+      const datosCita = {
+        mascota: nombreMascota,      
+        fecha: fechaCita,           
+        hora: horaSeleccionada.value, 
+        motivo: motivo,             
+        pacienteId: userId,
+        estado: 'Pendiente'
+      };
+
+      await axios.post(
+        'https://vetapp-web-completo.vercel.app/api/citas', 
+        datosCita, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      Alert.alert("¡Éxito!", "Cita guardada y sincronizada.");
       setMostrarForm(false);
-      setNombreMascota(''); setHoraSeleccionada(''); setMotivo('');
+      setNombreMascota(''); setMotivo(''); setHoraSeleccionada(null);
       fetchHistorial();
-    } catch (error) { Alert.alert("Error", "No se pudo conectar."); } 
-    finally { setLoading(false); }
+    } catch (error) {
+      Alert.alert("Error", "No se pudo guardar la cita. Verifica el ID del paciente.");
+    } finally { setLoading(false); }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         
-        {/* HEADER: Con margen superior para evitar la cámara */}
         <View style={styles.header}>
           <ThemedText style={styles.subtitle}>Gestione sus citas médicas 🐾</ThemedText>
           <TouchableOpacity onPress={handleLogout} style={styles.miniLogout}>
@@ -83,38 +104,43 @@ export default function CitasScreen() {
               </TouchableOpacity>
             </View>
 
-            <ThemedText style={styles.label}>Información</ThemedText>
-            <TextInput style={styles.input} placeholder="Mascota" value={nombreMascota} onChangeText={setNombreMascota} />
-            <TextInput style={styles.input} placeholder="Motivo" value={motivo} onChangeText={setMotivo} />
+            <ThemedText style={styles.label}>Nombre de la Mascota</ThemedText>
+            <TextInput style={styles.input} placeholder="Nombre (ej: Cheto)" value={nombreMascota} onChangeText={setNombreMascota} />
 
-            {/* FECHA RESTAURADA */}
+            <ThemedText style={styles.label}>Motivo</ThemedText>
+            <TextInput style={styles.input} placeholder="Ej: Limpieza, Vacuna..." value={motivo} onChangeText={setMotivo} />
+
             <ThemedText style={styles.label}>Fecha (AAAA-MM-DD)</ThemedText>
             <View style={styles.dateInputWrapper}>
               <IconSymbol name="calendar" size={18} color="#4F46E5" />
               <TextInput style={styles.dateInput} value={fechaCita} onChangeText={setFechaCita} keyboardType="numeric" />
             </View>
 
-            <ThemedText style={styles.label}>Horarios disponibles</ThemedText>
+            <ThemedText style={styles.label}>Seleccione Horario</ThemedText>
             <View style={styles.slotsGrid}>
               {slots.map((s) => (
-                <TouchableOpacity key={s} style={[styles.slotBtn, horaSeleccionada === s && styles.slotSelected]} onPress={() => setHoraSeleccionada(s)}>
-                  <ThemedText style={[styles.slotText, horaSeleccionada === s && {color: '#fff'}]}>{s}</ThemedText>
+                <TouchableOpacity 
+                  key={s.value} 
+                  style={[styles.slotBtn, horaSeleccionada?.value === s.value && styles.slotSelected]} 
+                  onPress={() => setHoraSeleccionada(s)}
+                >
+                  <ThemedText style={[styles.slotText, horaSeleccionada?.value === s.value && {color: '#fff'}]}>{s.label}</ThemedText>
                 </TouchableOpacity>
               ))}
             </View>
 
             <TouchableOpacity style={styles.mainBtn} onPress={handleAgendar} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" /> : <ThemedText style={{color: '#fff', fontWeight: 'bold'}}>CONFIRMAR</ThemedText>}
+              {loading ? <ActivityIndicator color="#fff" /> : <ThemedText style={{color: '#fff', fontWeight: 'bold'}}>CONFIRMAR CITA</ThemedText>}
             </TouchableOpacity>
           </View>
         )}
 
         <View style={styles.historyContainer}>
-          <ThemedText style={styles.sectionTitle}>Historial</ThemedText>
+          <ThemedText style={styles.sectionTitle}>Historial de Citas</ThemedText>
           {historial.map((item: any) => (
             <View key={item.id} style={styles.historyCard}>
               <View>
-                <ThemedText style={{fontWeight: 'bold'}}>{item.mascota}</ThemedText>
+                <ThemedText style={{fontWeight: 'bold'}}>{item.mascota || 'Paciente'}</ThemedText>
                 <ThemedText style={{fontSize: 12, color: '#6B7280'}}>{item.fecha} • {item.hora}</ThemedText>
               </View>
               <IconSymbol name="checkmark.circle.fill" size={22} color="#10b981" />
@@ -128,14 +154,7 @@ export default function CitasScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },
-  header: { 
-    paddingHorizontal: 25, 
-    marginTop: 40, // 👈 Forzamos que baje de la cámara
-    marginBottom: 10, 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center' 
-  },
+  header: { paddingHorizontal: 25, marginTop: 40, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   subtitle: { color: '#6B7280', fontSize: 16, fontWeight: '500' },
   miniLogout: { padding: 8, backgroundColor: '#fee2e2', borderRadius: 10 },
   showBtn: { backgroundColor: '#4F46E5', padding: 20, margin: 20, borderRadius: 18, alignItems: 'center' },
