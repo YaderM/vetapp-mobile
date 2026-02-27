@@ -3,145 +3,160 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import axios from 'axios';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-export default function SmartDashboard() {
+const { width } = Dimensions.get('window');
+const cardSize = (width - 60) / 2; 
+
+export default function ExploreScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [conteo, setConteo] = useState({ propietarios: 0, pacientes: 0, citas: 0, perfiles: 0 });
+  const [refreshing, setRefreshing] = useState(false);
+  const [historial, setHistorial] = useState([]); // Estado para el historial
 
-  const handleLogout = () => {
-    Alert.alert("Cerrar Sesión", "¿Deseas salir del panel administrativo?", [
-      { text: "Cancelar", style: "cancel" },
-      { 
-        text: "Salir", 
-        onPress: () => {
-          (global as any).userToken = null;
-          (global as any).userRole = null;
-          router.replace('/'); 
-        } 
-      }
-    ]);
+  // CAPTURAMOS LOS DATOS DEL USUARIO DINÁMICAMENTE
+  const userData = (global as any).userData;
+  const userName = userData?.nombre || "INVITADO";
+  const userRole = userData?.rol || "cliente";
+
+  const [stats, setStats] = useState({
+    propietarios: 0,
+    pacientes: 0,
+    citasHoy: 0,
+    perfiles: 0
+  });
+
+  const fetchDashboardData = async () => {
+    try {
+      const token = (global as any).userToken;
+      if (!token) return;
+      
+      // 1. Cargar Estadísticas
+      const resStats = await axios.get('https://vetapp-web-completo.vercel.app/api/dashboard/stats', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setStats(resStats.data);
+
+      // 2. Cargar Historial Dinámico (Solo las citas del usuario que entró)
+      const resHist = await axios.get('https://vetapp-web-completo.vercel.app/api/citas/mis-citas', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setHistorial(resHist.data);
+
+    } catch (error) {
+      console.log("Error en Dashboard:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  useEffect(() => {
-    // 🛡️ BLOQUEO ULTRA-ESTRICTO
-    const rawRole = (global as any).userRole;
-    const role = String(rawRole).toLowerCase();
+  useEffect(() => { fetchDashboardData(); }, []);
 
-    if (role === 'cliente') {
-      console.log("Acceso no autorizado a Dashboard. Rebotando...");
-      router.replace('/(tabs)/citas');
-      return;
-    }
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchDashboardData();
+  };
 
-    const fetchDatosReales = async () => {
-      try {
-        const token = (global as any).userToken;
-        const urlBase = 'https://vetapp-web-completo.vercel.app/api';
-        
-        const [propRes, pacRes, citaRes, perfRes] = await Promise.all([
-          axios.get(`${urlBase}/propietarios/count`, { headers: { Authorization: `Bearer ${token}` } }),
-          axios.get(`${urlBase}/pacientes/count`, { headers: { Authorization: `Bearer ${token}` } }),
-          axios.get(`${urlBase}/citas/hoy`, { headers: { Authorization: `Bearer ${token}` } }),
-          axios.get(`${urlBase}/usuarios/count`, { headers: { Authorization: `Bearer ${token}` } })
-        ]);
-
-        setConteo({
-          propietarios: propRes.data.total || 0,
-          pacientes: pacRes.data.total || 0,
-          citas: citaRes.data.total || 0,
-          perfiles: perfRes.data.total || 0
-        });
-      } catch (error) {
-        console.error("Error en Dashboard:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (role === 'administrador' || role === 'veterinario') {
-      fetchDatosReales();
-    }
-  }, []);
-
-  // Si no hay rol o es cliente, no renderizamos absolutamente nada
-  if (!(global as any).userRole || String((global as any).userRole).toLowerCase() === 'cliente') {
-    return null;
-  }
-
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#4f46e5" /></View>;
+  const StatCard = ({ title, value, icon, color, route }: any) => (
+    <TouchableOpacity 
+      style={[styles.card, { borderTopColor: color, borderTopWidth: 4 }]} 
+      onPress={() => router.push(route)}
+      activeOpacity={0.7}
+    >
+      <IconSymbol name={icon} size={35} color={color} />
+      <ThemedText style={styles.cardValue}>{value}</ThemedText>
+      <ThemedText style={styles.cardTitle}>{title}</ThemedText>
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <View>
-          <ThemedText style={styles.welcome}>Panel Administrativo</ThemedText>
-          <ThemedText style={styles.name}>Métricas del Sistema</ThemedText>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        <View style={styles.header}>
+          <ThemedText style={styles.subtitle}>
+            {userRole === 'admin' ? 'ADMINISTRADOR' : 'CLIENTE'}: {userName.toUpperCase()} 👋
+          </ThemedText>
+          <ThemedText style={styles.title}>Dashboard General 📊</ThemedText>
         </View>
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-          <IconSymbol name="power" size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
 
-      <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-        <View style={styles.grid}>
-          <View style={[styles.statCard, { borderLeftColor: '#4f46e5', borderLeftWidth: 5 }]}>
-            <IconSymbol name="person.2.fill" size={28} color="#4f46e5" />
-            <ThemedText style={styles.statNum}>{conteo.propietarios}</ThemedText>
-            <ThemedText style={styles.statLabel}>Propietarios</ThemedText>
-          </View>
+        {loading ? (
+          <ActivityIndicator size="large" color="#4F46E5" style={{ marginTop: 50 }} />
+        ) : (
+          <>
+            <View style={styles.grid}>
+              <StatCard title="Propietarios" value={stats.propietarios} icon="person.2.fill" color="#4F46E5" route="/propietarios" />
+              <StatCard title="Pacientes" value={stats.pacientes} icon="pawprint.fill" color="#10B981" route="/pacientes" />
+              <StatCard title="Citas Hoy" value={stats.citasHoy} icon="calendar" color="#F59E0B" route="/citas" />
+              <StatCard title="Usuarios" value={stats.perfiles} icon="person.crop.circle" color="#EF4444" route="/perfiles" />
+            </View>
 
-          <View style={[styles.statCard, { borderLeftColor: '#10b981', borderLeftWidth: 5 }]}>
-            <IconSymbol name="pawprint.fill" size={28} color="#10b981" />
-            <ThemedText style={styles.statNum}>{conteo.pacientes}</ThemedText>
-            <ThemedText style={styles.statLabel}>Pacientes</ThemedText>
-          </View>
-
-          <View style={[styles.statCard, { borderLeftColor: '#f59e0b', borderLeftWidth: 5 }]}>
-            <IconSymbol name="calendar" size={28} color="#f59e0b" />
-            <ThemedText style={styles.statNum}>{conteo.citas}</ThemedText>
-            <ThemedText style={styles.statLabel}>Citas Hoy</ThemedText>
-          </View>
-
-          <View style={[styles.statCard, { borderLeftColor: '#ec4899', borderLeftWidth: 5 }]}>
-            <IconSymbol name="person.crop.circle.badge.checkmark" size={28} color="#ec4899" />
-            <ThemedText style={styles.statNum}>{conteo.perfiles}</ThemedText>
-            <ThemedText style={styles.statLabel}>Perfiles</ThemedText>
-          </View>
-        </View>
+            {/* SECCIÓN DE HISTORIAL AÑADIDA */}
+            <View style={styles.historySection}>
+              <ThemedText style={styles.sectionTitle}>Historial Reciente</ThemedText>
+              {historial.length === 0 ? (
+                <ThemedText style={styles.emptyText}>No hay citas para mostrar.</ThemedText>
+              ) : (
+                historial.map((item: any) => (
+                  <View key={item.id} style={styles.historyCard}>
+                    <View>
+                      <ThemedText style={styles.petName}>{item.mascota || 'Mascota'}</ThemedText>
+                      <ThemedText style={styles.dateText}>{item.fecha} • {item.hora}</ThemedText>
+                    </View>
+                    <IconSymbol name="checkmark.circle.fill" size={22} color="#10b981" />
+                  </View>
+                ))
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f4f6' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { 
-    padding: 25, 
-    backgroundColor: '#fff', 
-    borderBottomWidth: 1, 
-    borderColor: '#eee',
-    paddingTop: 45, // Ajuste para barra de Android
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center'
+  container: { flex: 1, backgroundColor: '#F3F4F6' },
+  scrollContent: { paddingBottom: 100 },
+  header: { paddingHorizontal: 25, marginTop: 60, marginBottom: 30 },
+  subtitle: { color: '#6B7280', fontSize: 13, fontWeight: 'bold', letterSpacing: 1 },
+  title: { fontSize: 28, fontWeight: 'bold', color: '#1F2937', marginTop: 5 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingHorizontal: 20 },
+  card: {
+    backgroundColor: '#FFFFFF',
+    width: cardSize,
+    height: cardSize, 
+    padding: 15,
+    borderRadius: 22,
+    marginBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
-  logoutBtn: { backgroundColor: '#ef4444', padding: 12, borderRadius: 14, elevation: 4 },
-  welcome: { color: '#666', fontSize: 13, textTransform: 'uppercase' },
-  name: { color: '#4f46e5', fontSize: 22, fontWeight: 'bold' },
-  body: { padding: 20 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  statCard: { 
-    width: '48%', 
+  cardValue: { fontSize: 32, fontWeight: 'bold', color: '#111827', marginVertical: 5 },
+  cardTitle: { fontSize: 14, color: '#6B7280', fontWeight: 'bold', textAlign: 'center' },
+  // ESTILOS DEL HISTORIAL
+  historySection: { paddingHorizontal: 25, marginTop: 10 },
+  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#1F2937', marginBottom: 15 },
+  historyCard: { 
     backgroundColor: '#fff', 
-    padding: 20, 
-    borderRadius: 15, 
-    marginBottom: 15, 
-    elevation: 3 
+    padding: 15, 
+    borderRadius: 20, 
+    marginBottom: 12, 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center',
+    elevation: 2 
   },
-  statNum: { fontSize: 24, fontWeight: 'bold', marginTop: 10 },
-  statLabel: { color: '#6b7280', fontSize: 12, marginTop: 5 }
+  petName: { fontWeight: 'bold', fontSize: 16, color: '#1F2937' },
+  dateText: { color: '#6B7280', fontSize: 12, marginTop: 2 },
+  emptyText: { textAlign: 'center', color: '#9CA3AF', marginTop: 10, fontStyle: 'italic' }
 });

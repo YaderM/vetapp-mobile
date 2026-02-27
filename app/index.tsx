@@ -1,7 +1,11 @@
 import axios from 'axios';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, LogBox, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+// Esto ignora los avisos amarillos en el celular, pero los deja en la terminal
+LogBox.ignoreAllLogs();
+
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -23,42 +27,35 @@ export default function LoginScreen() {
       });
 
       if (response.data && response.data.token) {
-        // 1. Guardamos el Token
+        // --- CAMBIO CLAVE AQUÍ ---
+        // Guardamos el objeto completo (id, nombre, email, rol, etc.)
+        (global as any).userData = response.data; 
         (global as any).userToken = response.data.token; 
         
-        // 2. CAPTURA PROFUNDA: Buscamos el rol en todos los niveles posibles
+        // Captura del rol
         const userRole = response.data.rol || 
                          response.data.role || 
-                         (response.data.usuario && response.data.usuario.rol) ||
-                         (response.data.user && response.data.user.role) ||
-                         (response.data.data && response.data.data.rol);
+                         (response.data.usuario && response.data.usuario.rol);
 
         (global as any).userRole = userRole; 
 
-        // LOG CRUCIAL: Esto te dirá exactamente qué está llegando
-        console.log("--- DATOS RECIBIDOS ---");
-        console.log(JSON.stringify(response.data)); 
-        console.log("ROL ASIGNADO:", userRole);
+        console.log("--- LOGIN EXITOSO ---");
+        console.log("Usuario ID:", response.data.id);
+        console.log("Rol:", userRole);
 
-        // 3. REDIRECCIÓN BASADA EN VALOR REAL
+        // Redirección
         if (userRole && String(userRole).toLowerCase() === 'cliente') {
-          console.log("✅ Acceso CLIENTE detectado.");
           router.replace('/(tabs)/citas'); 
         } 
         else if (userRole && (String(userRole).toLowerCase() === 'administrador' || String(userRole).toLowerCase() === 'veterinario')) {
-          console.log("✅ Acceso STAFF detectado.");
           router.replace('/(tabs)/explore'); 
         }
         else {
-          console.log("⚠️ No se pudo determinar el rol:", userRole);
-          Alert.alert(
-            "Error de Perfil", 
-            `El servidor no envió un rol válido. Valor recibido: ${userRole}`
-          );
+          Alert.alert("Error de Perfil", "No se recibió un rol válido.");
         }
       }
     } catch (error: any) {
-      console.log("❌ Fallo en login:", error.response?.status, error.message);
+      console.log("❌ Fallo en login:", error.response?.status);
       Alert.alert("Acceso denegado", "Usuario o clave incorrectos");
     }
   };

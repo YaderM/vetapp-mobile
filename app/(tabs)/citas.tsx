@@ -8,8 +8,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function CitasScreen() {
   const router = useRouter();
-  const [nombreMascota, setNombreMascota] = useState(''); 
-  const [horaSeleccionada, setHoraSeleccionada] = useState(null);
+  const [nombreMascota, setNombreMascota] = useState('Cargando mascota...'); 
+  const [pacienteIdReal, setPacienteIdReal] = useState<number | null>(null);
+  const [horaSeleccionada, setHoraSeleccionada] = useState<any>(null);
   const [motivo, setMotivo] = useState('');
   const [loading, setLoading] = useState(false);
   const [historial, setHistorial] = useState([]);
@@ -25,7 +26,38 @@ export default function CitasScreen() {
     { label: '06:00 PM', value: '18:00:00' }, { label: '07:00 PM', value: '19:00:00' },
   ];
 
-  useEffect(() => { fetchHistorial(); }, []);
+  useEffect(() => { 
+    fetchHistorial(); 
+    fetchMascotaVinculada();
+  }, []);
+
+  const fetchMascotaVinculada = async () => {
+    const userData = (global as any).userData;
+    const token = (global as any).userToken;
+    
+    // Verificamos si los datos del usuario existen
+    if (!userData?.id || !token) {
+        setNombreMascota("Error: Inicia sesión de nuevo");
+        return;
+    }
+
+    try {
+      const response = await axios.get(`https://vetapp-web-completo.vercel.app/api/pacientes/usuario/${userData.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.data && response.data.length > 0) {
+        const mascota = response.data[0];
+        setNombreMascota(mascota.nombre);
+        setPacienteIdReal(mascota.id);
+      } else {
+        setNombreMascota("No se encontró mascota");
+      }
+    } catch (e) {
+      console.log("Error al obtener mascota:", e);
+      setNombreMascota("Error al cargar mascota");
+    }
+  };
 
   const fetchHistorial = async () => {
     const token = (global as any).userToken;
@@ -40,28 +72,25 @@ export default function CitasScreen() {
 
   const handleLogout = () => {
     (global as any).userToken = null;
+    (global as any).userData = null;
     router.replace('/');
   };
 
   const handleAgendar = async () => {
-    if (!nombreMascota || !horaSeleccionada || !motivo || !fechaCita) {
-      Alert.alert("Error", "Por favor completa todos los campos.");
+    if (!pacienteIdReal || !horaSeleccionada || !motivo || !fechaCita) {
+      Alert.alert("Error", "Por favor selecciona mascota, horario y motivo.");
       return;
     }
 
     setLoading(true);
     try {
-      // Usamos el ID del paciente que acabas de crear. 
-      // Según tu web, si Cheto es el primer paciente nuevo, prueba con ID 1 o 2.
-      const userId = (global as any).userData?.id || 1; 
       const token = (global as any).userToken;
-
+      
       const datosCita = {
-        mascota: nombreMascota,      
         fecha: fechaCita,           
         hora: horaSeleccionada.value, 
         motivo: motivo,             
-        pacienteId: userId,
+        pacienteId: pacienteIdReal,
         estado: 'Pendiente'
       };
 
@@ -71,12 +100,13 @@ export default function CitasScreen() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      Alert.alert("¡Éxito!", "Cita guardada y sincronizada.");
+      Alert.alert("¡Éxito!", "Cita guardada correctamente.");
       setMostrarForm(false);
-      setNombreMascota(''); setMotivo(''); setHoraSeleccionada(null);
+      setMotivo(''); 
+      setHoraSeleccionada(null);
       fetchHistorial();
     } catch (error) {
-      Alert.alert("Error", "No se pudo guardar la cita. Verifica el ID del paciente.");
+      Alert.alert("Error", "No se pudo guardar la cita.");
     } finally { setLoading(false); }
   };
 
@@ -104,19 +134,23 @@ export default function CitasScreen() {
               </TouchableOpacity>
             </View>
 
-            <ThemedText style={styles.label}>Nombre de la Mascota</ThemedText>
-            <TextInput style={styles.input} placeholder="Nombre (ej: Cheto)" value={nombreMascota} onChangeText={setNombreMascota} />
+            <ThemedText style={styles.label}>Mascota</ThemedText>
+            <View style={[styles.input, {backgroundColor: '#f3f4f6', justifyContent: 'center'}]}>
+                <ThemedText style={{color: pacienteIdReal ? '#1f2937' : '#9ca3af'}}>
+                    {nombreMascota}
+                </ThemedText>
+            </View>
 
             <ThemedText style={styles.label}>Motivo</ThemedText>
             <TextInput style={styles.input} placeholder="Ej: Limpieza, Vacuna..." value={motivo} onChangeText={setMotivo} />
 
-            <ThemedText style={styles.label}>Fecha (AAAA-MM-DD)</ThemedText>
+            <ThemedText style={styles.label}>Fecha</ThemedText>
             <View style={styles.dateInputWrapper}>
               <IconSymbol name="calendar" size={18} color="#4F46E5" />
               <TextInput style={styles.dateInput} value={fechaCita} onChangeText={setFechaCita} keyboardType="numeric" />
             </View>
 
-            <ThemedText style={styles.label}>Seleccione Horario</ThemedText>
+            <ThemedText style={styles.label}>Horario</ThemedText>
             <View style={styles.slotsGrid}>
               {slots.map((s) => (
                 <TouchableOpacity 
@@ -129,23 +163,31 @@ export default function CitasScreen() {
               ))}
             </View>
 
-            <TouchableOpacity style={styles.mainBtn} onPress={handleAgendar} disabled={loading}>
+            <TouchableOpacity 
+                style={[styles.mainBtn, !pacienteIdReal && {backgroundColor: '#9ca3af'}]} 
+                onPress={handleAgendar} 
+                disabled={loading || !pacienteIdReal}
+            >
               {loading ? <ActivityIndicator color="#fff" /> : <ThemedText style={{color: '#fff', fontWeight: 'bold'}}>CONFIRMAR CITA</ThemedText>}
             </TouchableOpacity>
           </View>
         )}
 
         <View style={styles.historyContainer}>
-          <ThemedText style={styles.sectionTitle}>Historial de Citas</ThemedText>
-          {historial.map((item: any) => (
-            <View key={item.id} style={styles.historyCard}>
-              <View>
-                <ThemedText style={{fontWeight: 'bold'}}>{item.mascota || 'Paciente'}</ThemedText>
-                <ThemedText style={{fontSize: 12, color: '#6B7280'}}>{item.fecha} • {item.hora}</ThemedText>
+          <ThemedText style={styles.sectionTitle}>Mi Historial</ThemedText>
+          {historial.length === 0 ? (
+            <ThemedText style={{textAlign: 'center', color: '#6B7280', marginTop: 20}}>No tienes citas registradas aún.</ThemedText>
+          ) : (
+            historial.map((item: any) => (
+              <View key={item.id} style={styles.historyCard}>
+                <View>
+                  <ThemedText style={{fontWeight: 'bold'}}>{item.pacienteNombre || 'Mascota'}</ThemedText>
+                  <ThemedText style={{fontSize: 12, color: '#6B7280'}}>{item.fecha} • {item.hora}</ThemedText>
+                </View>
+                <IconSymbol name="checkmark.circle.fill" size={22} color="#10b981" />
               </View>
-              <IconSymbol name="checkmark.circle.fill" size={22} color="#10b981" />
-            </View>
-          ))}
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -162,7 +204,7 @@ const styles = StyleSheet.create({
   formHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   labelTitle: { fontSize: 18, fontWeight: 'bold' },
   label: { fontSize: 13, fontWeight: 'bold', color: '#6B7280', marginBottom: 5, marginTop: 10, textTransform: 'uppercase' },
-  input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, marginBottom: 8 },
+  input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 12, marginBottom: 8, minHeight: 45 },
   dateInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 15, marginBottom: 5 },
   dateInput: { flex: 1, padding: 12, marginLeft: 5 },
   slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
